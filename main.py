@@ -4,7 +4,6 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from typing import Optional
 import httpx
-import google.generativeai as genai
 
 app = FastAPI(title="VendeZapp.AI Backend", version="1.0.0")
 
@@ -16,11 +15,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
-DATABASE_URL = os.getenv("DATABASE_URL", "")
-
-if GEMINI_API_KEY:
-    genai.configure(api_key=GEMINI_API_KEY)
+GROQ_API_KEY = os.getenv("GROQ_API_KEY", "")
 
 SYSTEM_PROMPT = """Você é a VEXI, inteligência operacional do comércio.
 Você controla estoque, vendas, produção, marketing e financeiro.
@@ -44,41 +39,84 @@ async def root():
 
 @app.get("/health")
 async def health():
-    return {"status": "healthy", "gemini": bool(GEMINI_API_KEY)}
+    return {"status": "healthy", "groq": bool(GROQ_API_KEY)}
 
 @app.post("/chat", response_model=ChatResponse)
 async def chat(request: ChatRequest):
-    if not GEMINI_API_KEY:
-        raise HTTPException(status_code=500, detail="GEMINI_API_KEY not configured")
+    if not GROQ_API_KEY:
+        raise HTTPException(status_code=500, detail="GROQ_API_KEY not configured")
     
     try:
-        model = genai.GenerativeModel("gemini-2.0-flash")
-        context = SYSTEM_PROMPT
-        if request.customer_name:
-            context += f"\nCliente: {request.customer_name}"
-        
-        response = model.generate_content(
-            f"{context}\n\nCliente disse: {request.message}\n\nResponda como VEXI:"
-        )
-        
-        return ChatResponse(reply=response.text, action=None)
+        async with httpx.AsyncClient() as client:
+            context = SYSTEM_PROMPT
+            if request.customer_name:
+                context += f"\nCliente: {request.customer_name}"
+            
+            response = await client.post(
+                "https://api.groq.com/openai/v1/chat/completions",
+                headers={
+                    "Authorization": f"Bearer {GROQ_API_KEY}",
+                    "Content-Type": "application/json"
+                },
+                json={
+                    "model": "llama-3.3-70b-versatile",
+                    "messages": [
+                        {"role": "system", "content": context},
+                        {"role": "user", "content": request.message}
+                    ],
+                    "max_tokens": 300,
+                    "temperature": 0.7
+                },
+                timeout=30.0
+            )
+            
+            if response.status_code != 200:
+                raise HTTPException(status_code=response.status_code, detail=response.text)
+            
+            data = response.json()
+            reply = data["choices"][0]["message"]["content"]
+            
+            return ChatResponse(reply=reply, action=None)
+    except httpx.TimeoutException:
+        raise HTTPException(status_code=504, detail="Groq API timeout")
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/read-invoice")
 async def read_invoice(message: str):
-    if not GEMINI_API_KEY:
-        raise HTTPException(status_code=500, detail="GEMINI_API_KEY not configured")
+    if not GROQ_API_KEY:
+        raise HTTPException(status_code=500, detail="GROQ_API_KEY not configured")
     
     try:
-        model = genai.GenerativeModel("gemini-2.0-flash")
-        prompt = f"""Leia esta descrição de nota fiscal e extraia os itens em JSON:
+        async with httpx.AsyncClient() as client:
+            prompt = f"""Leia esta descrição de nota fiscal e extraia os itens em JSON:
 {message}
 
 Retorne JSON com: fornecedor, itens (descricao, quantidade, unidade, valor_unitario, valor_total), total_nota"""
-        
-        response = model.generate_content(prompt)
-        return {"extracted": response.text}
+            
+            response = await client.post(
+                "https://api.groq.com/openai/v1/chat/completions",
+                headers={
+                    "Authorization": f"Bearer {GROQ_API_KEY}",
+                    "Content-Type": "application/json"
+                },
+                json={
+                    "model": "llama-3.3-70b-versatile",
+                    "messages": [
+                        {"role": "system", "content": "Você é um extrator de dados de notas fiscais. Retorne apenas JSON válido."},
+                        {"role": "user", "content": prompt}
+                    ],
+                    "max_tokens": 500,
+                    "temperature": 0.1
+                },
+                timeout=30.0
+            )
+            
+            if response.status_code != 200:
+                raise HTTPException(status_code=response.status_code, detail=response.text)
+            
+            data = response.json()
+            return {"extracted": data["choices"][0]["message"]["content"]}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
