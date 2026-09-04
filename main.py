@@ -10,7 +10,7 @@ GROQ_API_KEY = os.getenv("GROQ_API_KEY", "").strip()
 
 @app.get("/health")
 async def health():
-    return {"status": "ok", "key_len": len(GROQ_API_KEY), "key_start": GROQ_API_KEY[:8]}
+    return {"status": "ok", "groq": bool(GROQ_API_KEY)}
 
 @app.post("/chat")
 async def chat(data: dict):
@@ -18,6 +18,8 @@ async def chat(data: dict):
         r = await c.post(
             "https://api.groq.com/openai/v1/chat/completions",
             headers={"Authorization": f"Bearer {GROQ_API_KEY}", "Content-Type": "application/json"},
-            json={"model": "llama-3.3-70b-versatile", "messages": [{"role": "user", "content": data.get("message", "oi")}]},
+            json={"model": "llama-3.1-8b-instant", "messages": [{"role": "user", "content": data.get("message", "oi")}]},
         )
-        return {"status_code": r.status_code, "body": r.text[:500]}
+        if r.status_code != 200:
+            return {"error": r.text[:500]}
+        return {"reply": r.json()["choices"][0]["message"]["content"]}
