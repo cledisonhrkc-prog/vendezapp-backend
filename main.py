@@ -18,7 +18,7 @@ async def chat(data: dict):
         r = await c.post(
             "https://api.groq.com/openai/v1/chat/completions",
             headers={"Authorization": f"Bearer {GROQ_API_KEY}", "Content-Type": "application/json"},
-            json={"model": "llama3-8b-8192", "messages": [{"role": "user", "content": data.get("message", "oi")}]},
+            json={"model": "gemma2-9b-it", "messages": [{"role": "user", "content": data.get("message", "oi")}]},
         )
         if r.status_code != 200:
             return {"error": r.text[:500]}
