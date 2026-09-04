@@ -12,13 +12,27 @@ GROQ_API_KEY = os.getenv("GROQ_API_KEY", "").strip()
 async def health():
     return {"status": "ok", "groq": bool(GROQ_API_KEY)}
 
+@app.get("/models")
+async def models():
+    async with httpx.AsyncClient(timeout=30.0) as c:
+        r = await c.get(
+            "https://api.groq.com/openai/v1/models",
+            headers={"Authorization": f"Bearer {GROQ_API_KEY}"},
+        )
+        if r.status_code != 200:
+            return {"error": r.text[:500]}
+        data = r.json()
+        ids = [m["id"] for m in data.get("data", [])]
+        return {"models": ids}
+
 @app.post("/chat")
 async def chat(data: dict):
+    model = data.get("model", "llama-3.1-8b-instant")
     async with httpx.AsyncClient(timeout=30.0) as c:
         r = await c.post(
             "https://api.groq.com/openai/v1/chat/completions",
             headers={"Authorization": f"Bearer {GROQ_API_KEY}", "Content-Type": "application/json"},
-            json={"model": "gemma2-9b-it", "messages": [{"role": "user", "content": data.get("message", "oi")}]},
+            json={"model": model, "messages": [{"role": "user", "content": data.get("message", "oi")}]},
         )
         if r.status_code != 200:
             return {"error": r.text[:500]}
