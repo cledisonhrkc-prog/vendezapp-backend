@@ -20,6 +20,7 @@ async def chat(data: dict):
             headers={"Authorization": f"Bearer {GROQ_API_KEY}", "Content-Type": "application/json"},
             json={
                 "model": "qwen/qwen3.8-27b",
+                "max_tokens": 300,
                 "messages": [
                     {"role": "system", "content": "Você é a VEXI, assistente operacional de comércio. Responda em português brasileiro, curto e direto, máximo 4 linhas. Use 1 emoji."},
                     {"role": "user", "content": data.get("message", "oi")}
